@@ -13,5 +13,8 @@
     "@playwright/test": "^1.42.1",
     "@types/node": "^20.11.25",
     "dotenv": "^16.4.5"
+  },
+  "dependencies": {
+    "eshop": "file:"
   }
 }
