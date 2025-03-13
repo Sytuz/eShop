@@ -10,6 +10,8 @@ services:
       - "4317:4317"   # OTLP gRPC
       - "4318:4318"   # OTLP HTTP
       - "6831:6831/udp" # Jaeger Thrift Compact (used by OTEL)
+    networks:
+      - monitoring
 
   grafana:
     image: grafana/grafana:latest
@@ -20,3 +22,30 @@ services:
       - GF_SECURITY_ADMIN_PASSWORD=admin
     depends_on:
       - jaeger
+      - prometheus
+    volumes:
+      - grafana-storage:/var/lib/grafana
+      - ./grafana/provisioning/dashboards:/etc/grafana/provisioning/dashboards
+      - ./grafana/provisioning/datasources:/etc/grafana/provisioning/datasources
+      - ./grafana/dashboards:/var/lib/grafana/dashboards
+    networks:
+      - monitoring
+
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: prometheus
+    volumes:
+      - ./prometheus.yml:/etc/prometheus/prometheus.yml # Custom Prometheus config
+    ports:
+      - "9090:9090" # Prometheus UI
+    depends_on:
+      - jaeger
+    networks:
+      - monitoring
+
+networks:
+  monitoring:
+    driver: bridge
+
+volumes:
+  grafana-storage:

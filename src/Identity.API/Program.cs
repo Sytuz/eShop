@@ -2,6 +2,9 @@
 using OpenTelemetry.Resources;
 using OpenTelemetry.Trace;
 using OpenTelemetry.Exporter;
+using Microsoft.AspNetCore.Builder;
+using Microsoft.AspNetCore.Http;
+using Prometheus;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -11,10 +14,6 @@ var otel = builder.Services.AddOpenTelemetry();
 // Configure OpenTelemetry Resources with the application name
 otel.ConfigureResource(resource => resource
     .AddService(serviceName: "identity-api"));
-
-builder.Logging
-    .AddOpenTelemetry(options => options.AddOtlpExporter())
-    .AddConsole();
 
 // Add Metrics for ASP.NET Core and our custom metrics and export to Prometheus
 otel.WithMetrics(metrics => metrics
@@ -27,8 +26,6 @@ otel.WithMetrics(metrics => metrics
     // Metrics provided by System.Net libraries
     .AddMeter("System.Net.Http")
     .AddMeter("System.Net.NameResolution")
-    .AddRuntimeInstrumentation()     // Collects .NET runtime metrics
-    .AddProcessInstrumentation()     // Collects process-related metrics
     .AddPrometheusExporter());
 
 // Add Tracing for ASP.NET Core and our custom ActivitySource and export to Jaeger
@@ -50,7 +47,6 @@ otel.WithTracing(tracing =>
         tracing.AddConsoleExporter();
     }
 });
-
 
 builder.AddServiceDefaults();
 
@@ -95,7 +91,7 @@ builder.Services.AddTransient<IRedirectService, RedirectService>();
 var app = builder.Build();
 
 // Configure the Prometheus scraping endpoint
-app.MapPrometheusScrapingEndpoint();
+app.UseOpenTelemetryPrometheusScrapingEndpoint();
 
 app.MapDefaultEndpoints();
 
@@ -104,6 +100,7 @@ app.UseStaticFiles();
 // This cookie policy fixes login issues with Chrome 80+ using HTTP
 app.UseCookiePolicy(new CookiePolicyOptions { MinimumSameSitePolicy = SameSiteMode.Lax });
 app.UseRouting();
+app.UseHttpMetrics();
 app.UseIdentityServer();
 app.UseAuthorization();
 

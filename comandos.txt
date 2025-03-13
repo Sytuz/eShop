@@ -1,0 +1,17 @@
+  81 cd .\src\WebApp\
+  82 dotnet add package OpenTelemetry.Extensions.Hosting
+  83 dotnet add package OpenTelemetry.Instrumentation.AspNetCore
+  84 dotnet add package OpenTelemetry.Exporter.Jaeger
+  85 dotnet add package OpenTelemetry.Metrics
+  86 dotnet add package OpenTelemetry.Logs
+  87 cd ../..
+  88 dotnet run --project src/eShop.AppHost/eShop.AppHost.csproj
+  89 cd .\src\WebApp\
+  90 dotnet add package OpenTelemetry.Exporter.Prometheus.AspNetCore --prerelease
+  91 dotnet run --project src/eShop.AppHost/eShop.AppHost.csproj
+  92 cd ../..
+  93 dotnet run --project src/eShop.AppHost/eShop.AppHost.csproj
+  94 cd .\src\WebApp\
+  95 dotnet add package OpenTelemetry.Exporter.Console
+  96 cd ../..
+  97 dotnet run --project src/eShop.AppHost/eShop.AppHost.csproj
