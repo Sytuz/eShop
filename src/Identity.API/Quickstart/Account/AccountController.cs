@@ -1,6 +1,9 @@
 ﻿// Copyright (c) Brock Allen & Dominick Baier. All rights reserved.
 // Licensed under the Apache License, Version 2.0. See LICENSE in the project root for license information.
 
+using System.Diagnostics.Metrics;
+using System.Threading;
+
 namespace IdentityServerHost.Quickstart.UI
 {
     [SecurityHeaders]
@@ -14,7 +17,20 @@ namespace IdentityServerHost.Quickstart.UI
         private readonly IAuthenticationSchemeProvider _schemeProvider;
         private readonly IAuthenticationHandlerProvider _handlerProvider;
         private readonly IEventService _events;
-
+        
+        // Static counter for active users
+        private static long _activeUsers = 0;
+        private static readonly Meter Meter = new Meter("eShop.IdentityAPI", "1.0.0");
+        
+        static AccountController()
+        {
+            // Create observable gauge to track active users
+            Meter.CreateObservableGauge("identity_active_users", 
+                () => Interlocked.Read(ref _activeUsers),
+                unit: "users", 
+                description: "Number of currently active users");
+        }
+        
         public AccountController(
             UserManager<ApplicationUser> userManager,
             SignInManager<ApplicationUser> signInManager,
@@ -97,6 +113,9 @@ namespace IdentityServerHost.Quickstart.UI
                 {
                     var user = await _userManager.FindByNameAsync(model.Username);
                     await _events.RaiseAsync(new UserLoginSuccessEvent(user.UserName, user.Id, user.UserName, clientId: context?.Client.ClientId));
+                    
+                    // Increment active users counter on successful login
+                    Interlocked.Increment(ref _activeUsers);
 
                     if (context != null)
                     {
@@ -173,6 +192,11 @@ namespace IdentityServerHost.Quickstart.UI
             {
                 // delete local authentication cookie
                 await _signInManager.SignOutAsync();
+
+                // Decrement active users counter on logout
+                if (Interlocked.Read(ref _activeUsers) > 0)
+                    // Decrement the active users counter atomically
+                    Interlocked.Decrement(ref _activeUsers);
 
                 // raise the logout event
                 await _events.RaiseAsync(new UserLogoutSuccessEvent(User.GetSubjectId(), User.GetDisplayName()));

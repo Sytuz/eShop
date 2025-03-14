@@ -26,6 +26,8 @@ otel.WithMetrics(metrics => metrics
     // Metrics provided by System.Net libraries
     .AddMeter("System.Net.Http")
     .AddMeter("System.Net.NameResolution")
+    // Custom metrics
+    .AddMeter("eShop.IdentityAPI")
     .AddPrometheusExporter());
 
 // Add Tracing for ASP.NET Core and our custom ActivitySource and export to Jaeger
