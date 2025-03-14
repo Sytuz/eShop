@@ -35,7 +35,7 @@ otel.WithTracing(tracing =>
 {
     tracing.AddAspNetCoreInstrumentation();
     tracing.AddHttpClientInstrumentation();
-    tracing.AddSource("eShop.Identity.API");
+    tracing.AddSource("eShop.IdentityAPI");
     //tracing.AddSource(greeterActivitySource.Name);
     if (tracingOtlpEndpoint != null)
     {
@@ -48,6 +48,13 @@ otel.WithTracing(tracing =>
     {
         tracing.AddConsoleExporter();
     }
+    
+    // Add Jaeger exporter
+    tracing.AddJaegerExporter(jaegerOptions =>
+    {
+        jaegerOptions.AgentHost = builder.Configuration["Jaeger:AgentHost"] ?? "localhost";
+        jaegerOptions.AgentPort = int.Parse(builder.Configuration["Jaeger:AgentPort"] ?? "6831");
+    });
 });
 
 builder.AddServiceDefaults();

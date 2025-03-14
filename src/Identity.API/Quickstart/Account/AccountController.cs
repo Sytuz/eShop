@@ -3,6 +3,7 @@
 
 using System.Diagnostics.Metrics;
 using System.Threading;
+using System.Diagnostics;
 
 namespace IdentityServerHost.Quickstart.UI
 {
@@ -21,6 +22,7 @@ namespace IdentityServerHost.Quickstart.UI
         // Static counter for active users
         private static long _activeUsers = 0;
         private static readonly Meter Meter = new Meter("eShop.IdentityAPI", "1.0.0");
+        private static readonly ActivitySource ActivitySource = new ActivitySource("eShop.IdentityAPI", "1.0.0");
         
         static AccountController()
         {
@@ -114,6 +116,16 @@ namespace IdentityServerHost.Quickstart.UI
                     var user = await _userManager.FindByNameAsync(model.Username);
                     await _events.RaiseAsync(new UserLoginSuccessEvent(user.UserName, user.Id, user.UserName, clientId: context?.Client.ClientId));
                     
+                    // Create a trace for user login
+                    using (var activity = ActivitySource.StartActivity("UserLogin", ActivityKind.Server))
+                    {
+                        // Add attributes with privacy-conscious information
+                        activity?.SetTag("user.id", user.Id);
+                        activity?.SetTag("client.id", context?.Client.ClientId ?? "unknown");
+                        activity?.SetTag("authentication.success", true);
+                        activity?.SetTag("authentication.type", "local");
+                    }
+                    
                     // Increment active users counter on successful login
                     Interlocked.Increment(ref _activeUsers);
 
@@ -145,9 +157,19 @@ namespace IdentityServerHost.Quickstart.UI
                         throw new Exception("invalid return URL");
                     }
                 }
+                else
+                {
+                    // Create a trace for failed login attempt
+                    using (var activity = ActivitySource.StartActivity("UserLogin", ActivityKind.Server))
+                    {
+                        activity?.SetTag("authentication.success", false);
+                        activity?.SetTag("authentication.type", "local");
+                        activity?.SetTag("client.id", context?.Client.ClientId ?? "unknown");
+                    }
 
-                await _events.RaiseAsync(new UserLoginFailureEvent(model.Username, "invalid credentials", clientId: context?.Client.ClientId));
-                ModelState.AddModelError(string.Empty, AccountOptions.InvalidCredentialsErrorMessage);
+                    await _events.RaiseAsync(new UserLoginFailureEvent(model.Username, "invalid credentials", clientId: context?.Client.ClientId));
+                    ModelState.AddModelError(string.Empty, AccountOptions.InvalidCredentialsErrorMessage);
+                }
             }
 
             // something went wrong, show form with error
@@ -190,6 +212,18 @@ namespace IdentityServerHost.Quickstart.UI
 
             if (User?.Identity.IsAuthenticated == true)
             {
+                // Create a trace for user logout
+                using (var activity = ActivitySource.StartActivity("UserLogout", ActivityKind.Server))
+                {
+                    activity?.SetTag("user.id", User.GetSubjectId());
+
+                    // Censored display name for privacy
+                    // Show only the first letter of the name followed by asterisks
+                    var displayName = User.GetDisplayName();
+                    var censoredName = displayName.Length > 1 ? displayName[0] + new string('*', displayName.Length - 1) : displayName;
+                    activity?.SetTag("user.displayName", censoredName);
+                }
+
                 // delete local authentication cookie
                 await _signInManager.SignOutAsync();
 
