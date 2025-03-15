@@ -28,6 +28,16 @@ namespace IdentityServerHost.Quickstart.UI
         // Track active user sessions for Grafana display
         private static readonly ConcurrentDictionary<string, UserSessionInfo> ActiveUserSessions = 
             new ConcurrentDictionary<string, UserSessionInfo>();
+            
+        // Track user session Activities for duration calculation
+        private static readonly ConcurrentDictionary<string, Activity> UserSessionActivities =
+            new ConcurrentDictionary<string, Activity>();
+            
+        // Add counter for session duration metrics
+        private static readonly Histogram<double> SessionDurationHistogram = Meter.CreateHistogram<double>(
+            "identity_session_duration_seconds",
+            description: "Duration of user sessions in seconds",
+            unit: "s");
         
         // Add counter for successful logins
         private static readonly Counter<long> SuccessfulLoginsCounter = Meter.CreateCounter<long>(
@@ -181,6 +191,25 @@ namespace IdentityServerHost.Quickstart.UI
                         activity?.SetTag("user.displayName", CensorUsername(user.UserName));
                     }
                     
+                    // Start a new session activity to track session duration
+                    var sessionActivity = ActivitySource.StartActivity(
+                        "UserSession", 
+                        ActivityKind.Client, // Client type means long-running
+                        parentContext: default,  // No parent context, this is a root activity
+                        tags: new[]
+                        {
+                            new KeyValuePair<string, object>("user.id", CensorUserId(user.Id)),
+                            new KeyValuePair<string, object>("user.name", CensorUsername(user.UserName)),
+                            new KeyValuePair<string, object>("session.start", DateTime.UtcNow),
+                            new KeyValuePair<string, object>("client.id", context?.Client.ClientId ?? "unknown")
+                        });
+                        
+                    // Store the session activity to stop it when user logs out
+                    if (sessionActivity != null)
+                    {
+                        UserSessionActivities[user.Id] = sessionActivity;
+                    }
+                    
                     // Store user session information for Grafana display
                     var censoredUsername = CensorUsername(user.UserName);
                     var censoredUserId = CensorUserId(user.Id);
@@ -297,11 +326,38 @@ namespace IdentityServerHost.Quickstart.UI
                 var censoredUserId = CensorUserId(userId);
                 var censoredName = CensorUsername(displayName);
                 
+                // Calculate session duration if we have a session activity
+                if (UserSessionActivities.TryRemove(userId, out var sessionActivity))
+                {
+                    // Calculate session duration
+                    var sessionDuration = (DateTime.UtcNow - sessionActivity.StartTimeUtc).TotalSeconds;
+                    
+                    // Add duration tag before ending the activity
+                    sessionActivity.SetTag("session.duration_seconds", sessionDuration);
+                    
+                    // End the session activity
+                    sessionActivity.Dispose();
+                    
+                    // Record session duration in histogram
+                    SessionDurationHistogram.Record(sessionDuration, 
+                        new KeyValuePair<string, object>("user.id", censoredUserId),
+                        new KeyValuePair<string, object>("user.name", censoredName));
+                }
+                
                 // Create a trace for user logout
                 using (var activity = ActivitySource.StartActivity("UserLogout", ActivityKind.Server))
                 {
                     activity?.SetTag("user.id", censoredUserId);
                     activity?.SetTag("user.displayName", censoredName);
+                    
+                    // Add session info if available
+                    if (ActiveUserSessions.TryGetValue(userId, out var sessionInfo))
+                    {
+                        var sessionDuration = (DateTime.UtcNow - sessionInfo.LoginTimestamp).TotalSeconds;
+                        activity?.SetTag("session.duration_seconds", sessionDuration);
+                        activity?.SetTag("session.start_time", sessionInfo.LoginTimestamp);
+                        activity?.SetTag("session.end_time", DateTime.UtcNow);
+                    }
                 }
                 
                 // Record logout event with user information for Grafana
@@ -311,7 +367,16 @@ namespace IdentityServerHost.Quickstart.UI
                     new KeyValuePair<string, object>("timestamp", DateTime.UtcNow.ToString("o")));
 
                 // Remove user from active sessions
-                ActiveUserSessions.TryRemove(userId, out _);
+                if (ActiveUserSessions.TryRemove(userId, out var removedSession))
+                {
+                    var sessionDuration = (DateTime.UtcNow - removedSession.LoginTimestamp).TotalSeconds;
+                    
+                    // Add session duration to logout event
+                    UserLogoutEventCounter.Add(0,
+                        new KeyValuePair<string, object>("user.id", censoredUserId),
+                        new KeyValuePair<string, object>("user.name", censoredName),
+                        new KeyValuePair<string, object>("session.duration_seconds", sessionDuration));
+                }
 
                 // delete local authentication cookie
                 await _signInManager.SignOutAsync();
@@ -504,6 +569,24 @@ namespace IdentityServerHost.Quickstart.UI
             return username.Length <= 1 
                 ? username 
                 : username[0] + new string('*', username.Length - 1);
+        }
+        
+        [HttpGet]
+        [Route("api/identity/sessions")]
+        public IActionResult GetActiveSessions()
+        {
+            return Json(new 
+            {
+                ActiveSessions = ActiveUserSessions.Select(s => new
+                {
+                    UserId = s.Value.CensoredUserId,
+                    Username = s.Value.CensoredUsername,
+                    LoginTimestamp = s.Value.LoginTimestamp,
+                    SessionDuration = (DateTime.UtcNow - s.Value.LoginTimestamp).TotalSeconds
+                }).ToList(),
+                TotalSessions = ActiveUserSessions.Count,
+                ActiveActivities = UserSessionActivities.Count
+            });
         }
     }
 }
