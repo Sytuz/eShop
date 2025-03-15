@@ -1,28 +1,28 @@
-﻿
-namespace eShop.Identity.API;
+﻿namespace eShop.Identity.API;
 
 public class UsersSeed(ILogger<UsersSeed> logger, UserManager<ApplicationUser> userManager) : IDbSeeder<ApplicationDbContext>
 {
-    public async Task SeedAsync(ApplicationDbContext context)
+    // Helper method to create a user with standard properties
+    private async Task<bool> CreateUserIfNotExistsAsync(string userName, string email, string password, string firstName, string lastName)
     {
-        var alice = await userManager.FindByNameAsync("alice");
+        var user = await userManager.FindByNameAsync(userName);
 
-        if (alice == null)
+        if (user == null)
         {
-            alice = new ApplicationUser
+            user = new ApplicationUser
             {
-                UserName = "alice",
-                Email = "AliceSmith@email.com",
+                UserName = userName,
+                Email = email,
                 EmailConfirmed = true,
-                CardHolderName = "Alice Smith",
+                CardHolderName = $"{firstName} {lastName}",
                 CardNumber = "XXXXXXXXXXXX1881",
                 CardType = 1,
                 City = "Redmond",
                 Country = "U.S.",
                 Expiration = "12/24",
                 Id = Guid.NewGuid().ToString(),
-                LastName = "Smith",
-                Name = "Alice",
+                LastName = lastName,
+                Name = firstName,
                 PhoneNumber = "1234567890",
                 ZipCode = "98052",
                 State = "WA",
@@ -30,69 +30,46 @@ public class UsersSeed(ILogger<UsersSeed> logger, UserManager<ApplicationUser> u
                 SecurityNumber = "123"
             };
 
-            var result = userManager.CreateAsync(alice, "Pass123$").Result;
+            var result = await userManager.CreateAsync(user, password);
 
             if (!result.Succeeded)
             {
-                throw new Exception(result.Errors.First().Description);
+                logger.LogError("Failed to create user {UserName}: {Error}", userName, result.Errors.First().Description);
+                return false;
             }
 
-            if (logger.IsEnabled(LogLevel.Debug))
-            {
-                logger.LogDebug("alice created");
-            }
+            logger.LogDebug("User {UserName} created successfully", userName);
+            return true;
         }
         else
         {
-            if (logger.IsEnabled(LogLevel.Debug))
-            {
-                logger.LogDebug("alice already exists");
-            }
+            logger.LogDebug("User {UserName} already exists", userName);
+            return false;
         }
+    }
 
-        var bob = await userManager.FindByNameAsync("bob");
+    public async Task SeedAsync(ApplicationDbContext context)
+    {
+        // Original users (alice and bob)
+        await CreateUserIfNotExistsAsync("alice", "AliceSmith@email.com", "Pass123$", "Alice", "Smith");
+        await CreateUserIfNotExistsAsync("bob", "BobSmith@email.com", "Pass123$", "Bob", "Smith");
+        
+        // Create demo user
+        await CreateUserIfNotExistsAsync("demouser", "demouser@example.com", "Pass123$", "Demo", "User");
 
-        if (bob == null)
+        // Create 18 additional test users with different prefixes
+        string[] prefixes = { "test", "user", "customer", "employee", "guest", "member" };
+        string standardPassword = "Pass123$";
+        
+        for (int i = 1; i <= 18; i++)
         {
-            bob = new ApplicationUser
-            {
-                UserName = "bob",
-                Email = "BobSmith@email.com",
-                EmailConfirmed = true,
-                CardHolderName = "Bob Smith",
-                CardNumber = "XXXXXXXXXXXX1881",
-                CardType = 1,
-                City = "Redmond",
-                Country = "U.S.",
-                Expiration = "12/24",
-                Id = Guid.NewGuid().ToString(),
-                LastName = "Smith",
-                Name = "Bob",
-                PhoneNumber = "1234567890",
-                ZipCode = "98052",
-                State = "WA",
-                Street = "15703 NE 61st Ct",
-                SecurityNumber = "456"
-            };
-
-            var result = await userManager.CreateAsync(bob, "Pass123$");
-
-            if (!result.Succeeded)
-            {
-                throw new Exception(result.Errors.First().Description);
-            }
-
-            if (logger.IsEnabled(LogLevel.Debug))
-            {
-                logger.LogDebug("bob created");
-            }
-        }
-        else
-        {
-            if (logger.IsEnabled(LogLevel.Debug))
-            {
-                logger.LogDebug("bob already exists");
-            }
+            int prefixIndex = (i - 1) % prefixes.Length;
+            string userName = $"{prefixes[prefixIndex]}{i}";
+            string email = $"{userName}@example.com";
+            string firstName = char.ToUpper(prefixes[prefixIndex][0]) + prefixes[prefixIndex].Substring(1);
+            string lastName = $"User{i}";
+            
+            await CreateUserIfNotExistsAsync(userName, email, standardPassword, firstName, lastName);
         }
     }
 }
