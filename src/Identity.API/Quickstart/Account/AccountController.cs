@@ -4,6 +4,7 @@
 using System.Diagnostics.Metrics;
 using System.Threading;
 using System.Diagnostics;
+using System.Collections.Concurrent;
 
 namespace IdentityServerHost.Quickstart.UI
 {
@@ -24,6 +25,29 @@ namespace IdentityServerHost.Quickstart.UI
         private static readonly Meter Meter = new Meter("eShop.IdentityAPI", "1.0.0");
         private static readonly ActivitySource ActivitySource = new ActivitySource("eShop.IdentityAPI", "1.0.0");
         
+        // Track active user sessions for Grafana display
+        private static readonly ConcurrentDictionary<string, UserSessionInfo> ActiveUserSessions = 
+            new ConcurrentDictionary<string, UserSessionInfo>();
+        
+        // Add counter for successful logins
+        private static readonly Counter<long> SuccessfulLoginsCounter = Meter.CreateCounter<long>(
+            "identity_successful_logins_total",
+            description: "Total number of successful logins");
+
+        private static readonly Counter<long> FailedLoginsCounter = Meter.CreateCounter<long>(
+            "identity_failed_logins_total",
+            description: "Total number of failed logins");
+            
+        // Add event counter for login events that can be queried in Grafana
+        private static readonly Counter<long> UserLoginEventCounter = Meter.CreateCounter<long>(
+            "identity_user_login_event",
+            description: "User login events with user information");
+            
+        // Add event counter for logout events that can be queried in Grafana
+        private static readonly Counter<long> UserLogoutEventCounter = Meter.CreateCounter<long>(
+            "identity_user_logout_event", 
+            description: "User logout events with user information");
+        
         static AccountController()
         {
             // Create observable gauge to track active users
@@ -31,6 +55,35 @@ namespace IdentityServerHost.Quickstart.UI
                 () => Interlocked.Read(ref _activeUsers),
                 unit: "users", 
                 description: "Number of currently active users");
+                
+            // Create observable gauge that provides details about active user sessions
+            Meter.CreateObservableGauge("identity_active_user_sessions", 
+                () => 
+                {
+                    List<Measurement<int>> measurements = new List<Measurement<int>>();
+                    
+                    foreach (var session in ActiveUserSessions)
+                    {
+                        measurements.Add(new Measurement<int>(
+                            1,
+                            new KeyValuePair<string, object>("user.id", session.Value.CensoredUserId),
+                            new KeyValuePair<string, object>("user.name", session.Value.CensoredUsername),
+                            new KeyValuePair<string, object>("login.timestamp", session.Value.LoginTimestamp.ToString("o"))
+                        ));
+                    }
+                    
+                    return measurements;
+                },
+                unit: "sessions",
+                description: "Active user sessions with user information");
+        }
+        
+        // Class to store user session information
+        private class UserSessionInfo
+        {
+            public string CensoredUsername { get; set; }
+            public string CensoredUserId { get; set; }
+            public DateTime LoginTimestamp { get; set; }
         }
         
         public AccountController(
@@ -120,14 +173,37 @@ namespace IdentityServerHost.Quickstart.UI
                     using (var activity = ActivitySource.StartActivity("UserLogin", ActivityKind.Server))
                     {
                         // Add attributes with privacy-conscious information
-                        activity?.SetTag("user.id", user.Id);
+                        activity?.SetTag("user.id", CensorUserId(user.Id));
                         activity?.SetTag("client.id", context?.Client.ClientId ?? "unknown");
                         activity?.SetTag("authentication.success", true);
                         activity?.SetTag("authentication.type", "local");
+                        
+                        activity?.SetTag("user.displayName", CensorUsername(user.UserName));
                     }
+                    
+                    // Store user session information for Grafana display
+                    var censoredUsername = CensorUsername(user.UserName);
+                    var censoredUserId = CensorUserId(user.Id);
+                        
+                    ActiveUserSessions[user.Id] = new UserSessionInfo
+                    {
+                        CensoredUsername = censoredUsername,
+                        CensoredUserId = censoredUserId,
+                        LoginTimestamp = DateTime.UtcNow
+                    };
                     
                     // Increment active users counter on successful login
                     Interlocked.Increment(ref _activeUsers);
+                    
+                    // Increment successful logins counter
+                    SuccessfulLoginsCounter.Add(1, new KeyValuePair<string, object>("authentication.type", "local"));
+                    
+                    // Record login event with user information for Grafana
+                    UserLoginEventCounter.Add(1, 
+                        new KeyValuePair<string, object>("user.id", censoredUserId),
+                        new KeyValuePair<string, object>("user.name", censoredUsername),
+                        new KeyValuePair<string, object>("timestamp", DateTime.UtcNow.ToString("o")),
+                        new KeyValuePair<string, object>("client.id", context?.Client.ClientId ?? "unknown"));
 
                     if (context != null)
                     {
@@ -166,6 +242,9 @@ namespace IdentityServerHost.Quickstart.UI
                         activity?.SetTag("authentication.type", "local");
                         activity?.SetTag("client.id", context?.Client.ClientId ?? "unknown");
                     }
+
+                    // Increment failed logins counter
+                    FailedLoginsCounter.Add(1, new KeyValuePair<string, object>("authentication.type", "local"));
 
                     await _events.RaiseAsync(new UserLoginFailureEvent(model.Username, "invalid credentials", clientId: context?.Client.ClientId));
                     ModelState.AddModelError(string.Empty, AccountOptions.InvalidCredentialsErrorMessage);
@@ -212,17 +291,27 @@ namespace IdentityServerHost.Quickstart.UI
 
             if (User?.Identity.IsAuthenticated == true)
             {
+                var userId = User.GetSubjectId();
+                var displayName = User.GetDisplayName();
+                
+                var censoredUserId = CensorUserId(userId);
+                var censoredName = CensorUsername(displayName);
+                
                 // Create a trace for user logout
                 using (var activity = ActivitySource.StartActivity("UserLogout", ActivityKind.Server))
                 {
-                    activity?.SetTag("user.id", User.GetSubjectId());
-
-                    // Censored display name for privacy
-                    // Show only the first letter of the name followed by asterisks
-                    var displayName = User.GetDisplayName();
-                    var censoredName = displayName.Length > 1 ? displayName[0] + new string('*', displayName.Length - 1) : displayName;
+                    activity?.SetTag("user.id", censoredUserId);
                     activity?.SetTag("user.displayName", censoredName);
                 }
+                
+                // Record logout event with user information for Grafana
+                UserLogoutEventCounter.Add(1,
+                    new KeyValuePair<string, object>("user.id", censoredUserId),
+                    new KeyValuePair<string, object>("user.name", censoredName),
+                    new KeyValuePair<string, object>("timestamp", DateTime.UtcNow.ToString("o")));
+
+                // Remove user from active sessions
+                ActiveUserSessions.TryRemove(userId, out _);
 
                 // delete local authentication cookie
                 await _signInManager.SignOutAsync();
@@ -233,7 +322,7 @@ namespace IdentityServerHost.Quickstart.UI
                     Interlocked.Decrement(ref _activeUsers);
 
                 // raise the logout event
-                await _events.RaiseAsync(new UserLogoutSuccessEvent(User.GetSubjectId(), User.GetDisplayName()));
+                await _events.RaiseAsync(new UserLogoutSuccessEvent(userId, displayName));
             }
 
             // check if we need to trigger sign-out at an upstream identity provider
@@ -387,6 +476,34 @@ namespace IdentityServerHost.Quickstart.UI
             }
 
             return vm;
+        }
+
+        /// <summary>
+        /// Helper method to censor user IDs for privacy
+        /// </summary>
+        private static string CensorUserId(string userId)
+        {
+            if (string.IsNullOrEmpty(userId)) 
+                return "unknown";
+                
+            // Show only first 3 characters, replace rest with asterisks
+            return userId.Length <= 3 
+                ? userId 
+                : userId.Substring(0, 3) + new string('*', userId.Length - 3);
+        }
+        
+        /// <summary>
+        /// Helper method to censor usernames for privacy
+        /// </summary>
+        private static string CensorUsername(string username)
+        {
+            if (string.IsNullOrEmpty(username)) 
+                return "unknown";
+                
+            // Show only first character, replace rest with asterisks
+            return username.Length <= 1 
+                ? username 
+                : username[0] + new string('*', username.Length - 1);
         }
     }
 }
