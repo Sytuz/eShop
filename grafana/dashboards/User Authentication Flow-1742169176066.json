@@ -18,7 +18,7 @@
   "editable": true,
   "fiscalYearStartMonth": 0,
   "graphTooltip": 0,
-  "id": 1,
+  "id": 2,
   "links": [],
   "panels": [
     {
@@ -94,8 +94,8 @@
     },
     {
       "datasource": {
-        "type": "prometheus",
-        "uid": "PBFA97CFB590B2093"
+        "type": "jaeger",
+        "uid": "PC9A941E8F2E49454"
       },
       "fieldConfig": {
         "defaults": {
@@ -129,9 +129,9 @@
         "orientation": "auto",
         "reduceOptions": {
           "calcs": [
-            "lastNotNull"
+            "mean"
           ],
-          "fields": "/^\\{instance=\"host\\.docker\\.internal:5243\", job=\"identity\\-api\", otel_scope_name=\"eShop\\.IdentityAPI\", otel_scope_version=\"1\\.0\\.0\", user_id=\"000\\*\\*\\*\\*\\*\\*\\*\\*\\*\\*\\*\\*\\*\\*\\*\\*\\*\\*\\*\\*\\*\\*\\*\\*\\*\\*\\*\\*\\*\\*\\*\\*\\*\", user_name=\"g\\*\\*\\*\\*\\*\\*\"\\}$/",
+          "fields": "/^Duration$/",
           "values": false
         },
         "showThresholdLabels": false,
@@ -142,27 +142,25 @@
       "targets": [
         {
           "datasource": {
-            "type": "prometheus",
-            "uid": "PBFA97CFB590B2093"
+            "type": "jaeger",
+            "uid": "PC9A941E8F2E49454"
           },
-          "disableTextWrap": false,
-          "editorMode": "code",
-          "expr": "identity_session_duration_seconds_sum / identity_session_duration_seconds_count",
-          "fullMetaSearch": false,
-          "includeNullMetadata": false,
-          "instant": false,
-          "legendFormat": "__auto",
-          "range": true,
+          "operation": "UserSession",
+          "queryType": "search",
           "refId": "A",
-          "useBackend": false
+          "service": "identity-api"
         }
       ],
       "title": "Average User Session Duration",
       "transformations": [
         {
-          "id": "limit",
+          "id": "filterFieldsByName",
           "options": {
-            "limitField": "1"
+            "include": {
+              "names": [
+                "Duration"
+              ]
+            }
           }
         }
       ],
@@ -822,8 +820,7 @@
             "mode": "absolute",
             "steps": [
               {
-                "color": "dark-purple",
-                "value": null
+                "color": "dark-purple"
               }
             ]
           },
@@ -898,8 +895,7 @@
             "mode": "absolute",
             "steps": [
               {
-                "color": "green",
-                "value": null
+                "color": "green"
               },
               {
                 "color": "red",
