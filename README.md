@@ -6,8 +6,6 @@
 
 The feature tracked in this assignment is the **User Authentication** feature of the eShop application. This includes the login and logout functionalities, which are critical for user management and security.
 
-The following diagrams illustrate the flow of the login and logout processes, aswell as the tech stack used in the eShop application.
-
 ## Observability Metrics and Traces
 
 The User Authentication feature is monitored using various metrics and traces through OpenTelemetry, which are then visualized in Grafana.
@@ -95,7 +93,7 @@ The observability data can be viewed in Grafana. After starting the Docker conta
 
 There are two dashboards available:
  - **User Authentication Flow** - Displays the metrics and traces related to the login and logout processes.
- 
+
 ![User Authentication Flow](img/user_authentication_flow_dashboard.png)
 
  - **ASP.NET Core** - Displays the metrics and traces related to the ASP.NET Core application.
