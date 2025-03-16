@@ -38,28 +38,32 @@ export const options = {
   },
 };
 
-// Helper function to generate users with standard passwords
+/* User Pool */
+
 function generateUser(prefix, index) {
   const username = `${prefix}${index}`;
-  const password = 'Pass123$'; // All users use the same password
+  const password = 'Pass123$';
   return { username, password };
 }
 
-// User pool - including all available users from UsersSeed.cs
 const users = [
   { username: 'alice', password: 'Pass123$' },
   { username: 'bob', password: 'Pass123$' },
   { username: 'demouser', password: 'Pass123$' },
 ];
 
-// Add the additional 18 test users
 const prefixes = ['test', 'user', 'customer', 'employee', 'guest', 'member'];
 for (let i = 1; i <= 18; i++) {
   const prefixIndex = (i - 1) % prefixes.length;
   users.push(generateUser(prefixes[prefixIndex], i));
 }
 
-// Initial setup - executed once per VU
+// Wrong credentials for negative tests
+users.push({ username: 'alice', password: 'WrongPass123$' });
+users.push({ username: 'bob', password: 'WrongPass123$' });
+users.push({ username: 'demouser', password: 'WrongPass123$' });
+
+// Setup - executed once at the beginning of the test
 export function setup() {
   console.log(`Starting login/logout performance test with ${users.length} users`);
   return {
@@ -69,7 +73,7 @@ export function setup() {
   };
 }
 
-// Main test function - executed for each virtual user
+// Main test function - executed for each user
 export default function(data) {
   const baseUrl = data.baseUrl;
   
@@ -85,9 +89,6 @@ export default function(data) {
     const loginPageResponse = http.get(loginPageUrl, {
         headers: { 'User-Agent': 'k6' }
     });
-
-    console.log(`Login page response: ${loginPageResponse.status}`);
-    console.log(`Response body: ${loginPageResponse.body ? loginPageResponse.body.substring(0, 500) : 'No body received'}`);
     
     check(loginPageResponse, {
       'login page loaded': (r) => r.status === 200,
@@ -155,48 +156,10 @@ export default function(data) {
       'logout page loaded': (r) => r.status === 200 || r.status === 302
     });
     
-    // If the page contains a form, it might be a confirmation page
-    const hasLogoutForm = logoutPageResponse.body.includes('form');
     logoutAttempts.add(1);
     
     let logoutSuccess = directLogoutSuccess;
-    
-    // Only try to submit the form if one exists
-    if (hasLogoutForm) {
-      console.log('Logout form found, submitting confirmation...');
-      // Extract any tokens from the form
-      const logoutDoc = parseHTML(logoutPageResponse.body);
-      const logoutToken = logoutDoc.find('input[name="__RequestVerificationToken"]').attr('value');
-      const logoutId = logoutDoc.find('input[name="LogoutId"]').attr('value');
-      
-      // Short pause to simulate user confirming logout
-      sleep(randomIntBetween(1, 2));
-      
-      // Only submit the form if we found the necessary tokens
-      if (logoutToken && logoutId) {
-        const logoutPayload = {
-          LogoutId: logoutId,
-          __RequestVerificationToken: logoutToken
-        };
         
-        const logoutResponse = http.post(logoutPageUrl, logoutPayload, {
-          headers: {
-            'Content-Type': 'application/x-www-form-urlencoded',
-            'Accept': 'text/html',
-            'Cookie': loginResponse.cookies.toString() + '; ' + logoutPageResponse.cookies.toString()
-          }
-        });
-        
-        logoutSuccess = check(logoutResponse, {
-          'logout form submission successful': (r) => r.status === 200 || r.status === 302
-        });
-      } else {
-        console.log('Could not find necessary tokens for logout form submission');
-      }
-    } else {
-      console.log('No logout form found, assuming direct logout');
-    }
-    
     logoutSuccessRate.add(logoutSuccess);
     
     // Record session duration

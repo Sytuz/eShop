@@ -4,7 +4,7 @@ This directory contains scripts for load testing the eShop Identity API login an
 
 ## Setup
 
-1. Install k6: https://k6.io/docs/getting-started/installation/
+1. Install k6: https://grafana.com/docs/k6/next/set-up/install-k6/
 
 ## Running the tests
 
@@ -12,14 +12,6 @@ This directory contains scripts for load testing the eShop Identity API login an
 
 ```bash
 k6 run identity-login-test.js
-```
-
-### Custom Configuration
-
-You can customize the test by setting environment variables:
-
-```bash
-k6 run --env BASE_URL=http://localhost:5105 identity-login-test.js
 ```
 
 ## Test Scenarios
@@ -31,12 +23,11 @@ The test script includes two scenarios:
 
 ## Available Test Users
 
-The load test uses 21 test users:
+The load test uses 24 test users:
 
 1. Original users:
    - alice/Pass123$
    - bob/Pass123$
-   
 
 2. Additional users (created in UsersSeed.cs):
    - demouser/Pass123$
@@ -45,6 +36,11 @@ The load test uses 21 test users:
    - customer3/Pass123$
    - employee4/Pass123$
    - ...and so on
+
+3. Users with wrong credentials:
+   - alice/WrongPass123$
+   - bob/WrongPass123$
+   - demouser/WrongPass123$
 
 All these users are automatically created when the application starts through the UsersSeed.cs seeding logic.
 
@@ -57,13 +53,3 @@ All these users are automatically created when the application starts through th
   - `session_duration`: Distribution of session durations (time between login and logout)
   - `login_attempts`: Total number of login attempts
   - `logout_attempts`: Total number of logout attempts
-
-## Integration with Grafana
-
-You can visualize k6 results in Grafana by:
-
-1. Running k6 with InfluxDB output:
-   ```
-   k6 run --out influxdb=http://localhost:8086/k6 identity-login-test.js
-   ```
-2. Creating a Grafana dashboard that uses InfluxDB as a data source
