@@ -25,7 +25,7 @@ namespace IdentityServerHost.Quickstart.UI
         private static readonly Meter Meter = new Meter("eShop.IdentityAPI", "1.0.0");
         private static readonly ActivitySource ActivitySource = new ActivitySource("eShop.IdentityAPI", "1.0.0");
         
-        // Track active user sessions for Grafana display
+        // Track active user sessions
         private static readonly ConcurrentDictionary<string, UserSessionInfo> ActiveUserSessions = 
             new ConcurrentDictionary<string, UserSessionInfo>();
             
@@ -33,27 +33,33 @@ namespace IdentityServerHost.Quickstart.UI
         private static readonly ConcurrentDictionary<string, Activity> UserSessionActivities =
             new ConcurrentDictionary<string, Activity>();
             
-        // Add counter for session duration metrics
+        // Counter for session duration metrics
         private static readonly Histogram<double> SessionDurationHistogram = Meter.CreateHistogram<double>(
             "identity_session_duration_seconds",
             description: "Duration of user sessions in seconds",
             unit: "s");
         
-        // Add counter for successful logins
+        // Counter for successful logins
         private static readonly Counter<long> SuccessfulLoginsCounter = Meter.CreateCounter<long>(
             "identity_successful_logins_total",
             description: "Total number of successful logins");
 
+        // Counter for failed logins
         private static readonly Counter<long> FailedLoginsCounter = Meter.CreateCounter<long>(
             "identity_failed_logins_total",
             description: "Total number of failed logins");
+
+        // Simple counter for login events
+        private static readonly Counter<long> LoginEventCounter = Meter.CreateCounter<long>(
+            "identity_login_event",
+            description: "Total number of login events");
             
-        // Add event counter for login events that can be queried in Grafana
+        // Event counter for login events
         private static readonly Counter<long> UserLoginEventCounter = Meter.CreateCounter<long>(
             "identity_user_login_event",
             description: "User login events with user information");
             
-        // Add event counter for logout events that can be queried in Grafana
+        // Event counter for logout events
         private static readonly Counter<long> UserLogoutEventCounter = Meter.CreateCounter<long>(
             "identity_user_logout_event", 
             description: "User logout events with user information");
@@ -173,13 +179,15 @@ namespace IdentityServerHost.Quickstart.UI
 
             if (ModelState.IsValid)
             {
+                LoginEventCounter.Add(1, new KeyValuePair<string, object>("authentication.type", "local"));
+
                 var result = await _signInManager.PasswordSignInAsync(model.Username, model.Password, model.RememberLogin, lockoutOnFailure: true);
                 if (result.Succeeded)
                 {
                     var user = await _userManager.FindByNameAsync(model.Username);
                     await _events.RaiseAsync(new UserLoginSuccessEvent(user.UserName, user.Id, user.UserName, clientId: context?.Client.ClientId));
                     
-                    // Create a trace for user login
+                    // User login success trace
                     using (var activity = ActivitySource.StartActivity("UserLogin", ActivityKind.Server))
                     {
                         // Add attributes with privacy-conscious information
@@ -191,7 +199,7 @@ namespace IdentityServerHost.Quickstart.UI
                         activity?.SetTag("user.displayName", CensorUsername(user.UserName));
                     }
                     
-                    // Start a new session activity to track session duration
+                    // User session activity trace
                     var sessionActivity = ActivitySource.StartActivity(
                         "UserSession", 
                         ActivityKind.Client, // Client type means long-running
