@@ -1,0 +1,27 @@
+title User Login Flow
+
+WebApp->IdentityAPI: POST /Account/Login
+IdentityAPI->OpenTelemetry: Start "UserLogin" activity
+OpenTelemetry->Jaeger: Send activity start
+
+IdentityAPI->Prometheus: Increment login_event counter
+IdentityAPI->IdentityDB: Validate credentials
+IdentityDB-->IdentityAPI: Authentication result
+
+alt Login Success
+    IdentityAPI->Prometheus: Increment successful_logins counter
+    IdentityAPI->Prometheus: Increment active_users gauge
+    IdentityAPI->OpenTelemetry: Start "UserSession" activity
+    OpenTelemetry->Jaeger: Send session start
+    IdentityAPI->Prometheus: Update active_user_sessions metric
+else Login Failure
+    IdentityAPI->Prometheus: Increment failed_logins counter
+end
+
+IdentityAPI->OpenTelemetry: End "UserLogin" activity
+OpenTelemetry->Jaeger: Send activity end
+
+IdentityAPI-->WebApp: Login Response
+
+Prometheus->Grafana: Metrics data
+Jaeger->Grafana: Tracing data

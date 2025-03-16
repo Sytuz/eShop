@@ -1,0 +1,24 @@
+title User Logout Flow
+
+WebApp->IdentityAPI: POST /Account/Logout
+IdentityAPI->OpenTelemetry: Start "UserLogout" activity
+OpenTelemetry->Jaeger: Send activity start
+
+IdentityAPI->OpenTelemetry: End "UserSession" activity
+OpenTelemetry->Jaeger: Send session end
+
+IdentityAPI->Prometheus: Calculate & record session duration
+IdentityAPI->Prometheus: Decrement active_users gauge
+IdentityAPI->Prometheus: Update active_user_sessions metric
+IdentityAPI->Prometheus: Increment logout_event counter
+
+IdentityAPI->IdentityDB: Clear session
+IdentityDB-->IdentityAPI: Session cleared
+
+IdentityAPI->OpenTelemetry: End "UserLogout" activity
+OpenTelemetry->Jaeger: Send activity end
+
+IdentityAPI-->WebApp: Logout Response
+
+Prometheus->Grafana: Metrics data
+Jaeger->Grafana: Tracing data

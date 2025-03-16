@@ -1,142 +1,105 @@
-# eShop Reference Application - "AdventureWorks"
+# AS - Assignment 1
 
-A reference .NET application implementing an e-commerce website using a services-based architecture using [.NET Aspire](https://learn.microsoft.com/dotnet/aspire/).
+## Made by: Alexandre Ribeiro, 108122
 
-![eShop Reference Application architecture diagram](img/eshop_architecture.png)
+## Tracked Feature
 
-![eShop homepage screenshot](img/eshop_homepage.png)
+The feature tracked in this assignment is the **User Authentication** feature of the eShop application. This includes the login and logout functionalities, which are critical for user management and security.
 
-## Getting Started
+The following diagrams illustrate the flow of the login and logout processes, aswell as the tech stack used in the eShop application.
 
-This version of eShop is based on .NET 9. 
+## Observability Metrics and Traces
 
-Previous eShop versions:
-* [.NET 8](https://github.com/dotnet/eShop/tree/release/8.0)
+The User Authentication feature is monitored using various metrics and traces through OpenTelemetry, which are then visualized in Grafana.
 
-### Prerequisites
+### Metrics
+The following metrics are tracked:
 
-- Clone the eShop repository: https://github.com/dotnet/eshop
-- [Install & start Docker Desktop](https://docs.docker.com/engine/install/)
+- **Active Users**
+  - `identity_active_users`: Number of currently logged-in users
+  - `identity_active_user_sessions`: Detailed information about active sessions
 
-#### Windows with Visual Studio
-- Install [Visual Studio 2022 version 17.10 or newer](https://visualstudio.microsoft.com/vs/).
-  - Select the following workloads:
-    - `ASP.NET and web development` workload.
-    - `.NET Aspire SDK` component in `Individual components`.
-    - Optional: `.NET Multi-platform App UI development` to run client apps
+- **Authentication Events**
+  - `identity_successful_logins_total`: Counter of successful login attempts
+  - `identity_failed_logins_total`: Counter of failed login attempts
+  - `identity_login_event`: Simple counter for login events
+  - `identity_user_login_event`: Detailed login events with user information
+  - `identity_user_logout_event`: Detailed logout events with user information
 
-Or
+- **Session Analytics**
+  - `identity_session_duration_seconds`: Histogram of user session durations
 
-- Run the following commands in a Powershell & Terminal running as `Administrator` to automatically configure your environment with the required tools to build and run this application. (Note: A restart is required and included in the script below.)
+### Traces
+The following activities are traced:
 
-```powershell
-install-Module -Name Microsoft.WinGet.Configuration -AllowPrerelease -AcceptLicense -Force
-$env:Path = [System.Environment]::GetEnvironmentVariable("Path","Machine") + ";" + [System.Environment]::GetEnvironmentVariable("Path","User")
-get-WinGetConfiguration -file .\.configurations\vside.dsc.yaml | Invoke-WinGetConfiguration -AcceptConfigurationAgreements
-```
+- **Login Process**
+  - Activity: `UserLogin`
+  - Tags: user.id (censored), client.id, authentication.success, authentication.type
 
-Or
+- **User Sessions**
+  - Activity: `UserSession`
+  - Tags: user.id (censored), user.name (censored), session.start, client.id
+  - Long-running activity that spans from login to logout
 
-- From Dev Home go to `Machine Configuration -> Clone repositories`. Enter the URL for this repository. In the confirmation screen look for the section `Configuration File Detected` and click `Run File`.
+- **Logout Process**
+  - Activity: `UserLogout`
+  - Tags: user.id (censored), user.displayName (censored), session duration and timestamps
 
-#### Mac, Linux, & Windows without Visual Studio
-- Install the latest [.NET 9 SDK](https://dot.net/download?cid=eshop)
+Note: The user-identifying information is censored for privacy, showing only partial data.
 
-Or
+### Technology Stack
+The **User Authentication** flows are implemented using the Web App, the Identity API and its database:
 
-- Run the following commands in a Powershell & Terminal running as `Administrator` to automatically configuration your environment with the required tools to build and run this application. (Note: A restart is required after running the script below.)
+![Technology Stack](img/eshop_authentication_stack.png)
 
-##### Install Visual Studio Code and related extensions
-```powershell
-install-Module -Name Microsoft.WinGet.Configuration -AllowPrerelease -AcceptLicense  -Force
-$env:Path = [System.Environment]::GetEnvironmentVariable("Path","Machine") + ";" + [System.Environment]::GetEnvironmentVariable("Path","User")
-get-WinGetConfiguration -file .\.configurations\vscode.dsc.yaml | Invoke-WinGetConfiguration -AcceptConfigurationAgreements
-```
+### Login Flow
+![Login Flow](img/diagrams/login-flow.png)
 
-> Note: These commands may require `sudo`
+### Logout Flow
+![Logout Flow](img/diagrams/logout-flow.png)
 
-- Optional: Install [Visual Studio Code with C# Dev Kit](https://code.visualstudio.com/docs/csharp/get-started)
-- Optional: Install [.NET MAUI Workload](https://learn.microsoft.com/dotnet/maui/get-started/installation?tabs=visual-studio-code)
+## How to run the application
 
-> Note: When running on Mac with Apple Silicon (M series processor), Rosetta 2 for grpc-tools. 
+After cloning the repository, you can use the following command to run the application :
 
-### Running the solution
-
-> [!WARNING]
-> Remember to ensure that Docker is started
-
-* (Windows only) Run the application from Visual Studio:
- - Open the `eShop.Web.slnf` file in Visual Studio
- - Ensure that `eShop.AppHost.csproj` is your startup project
- - Hit Ctrl-F5 to launch Aspire
-
-* Or run the application from your terminal:
-```powershell
+```bash
 dotnet run --project src/eShop.AppHost/eShop.AppHost.csproj
 ```
-then look for lines like this in the console output in order to find the URL to open the Aspire dashboard:
-```sh
-Login to the dashboard at: http://localhost:19888/login?t=uniquelogincodeforyou
+
+This will start the application on `https://localhost:7298/` by default. You can access the application in your web browser.
+
+For the observability features, you have to use Docker to run the appropriate containers:
+  
+```bash
+docker compose up -d
 ```
 
-> You may need to install ASP.NET Core HTTPS development certificates first, and then close all browser tabs. Learn more at https://aka.ms/aspnet/https-trust-dev-cert
+This will start the following services:
+- **Grafana**: Access it at `http://localhost:3000/` (default credentials: admin/admin)
+- **Prometheus**: Access it at `http://localhost:9090/`
+- **Jaeger**: Access it at `http://localhost:16686/`
 
-### Azure Open AI
+## How to run the tests
 
-When using Azure OpenAI, inside *eShop.AppHost/appsettings.json*, add the following section:
+The load test scripts are located in the `tests/k6` directory. You can run them using the following command:
 
-```json
-  "ConnectionStrings": {
-    "OpenAi": "Endpoint=xxx;Key=xxx;"
-  }
+```bash
+k6 run tests/k6/identity-login-test.js
 ```
 
-Replace the values with your own. Then, in the eShop.AppHost *Program.cs*, set this value to **true**
+More details about the tests can be found in the `README.md` file located in the `tests/k6` directory.
 
-```csharp
-bool useOpenAI = false;
-```
+## How to view the observability data
 
-Here's additional guidance on the [.NET Aspire OpenAI component](https://learn.microsoft.com/dotnet/aspire/azureai/azureai-openai-component?tabs=dotnet-cli). 
+The observability data can be viewed in Grafana. After starting the Docker containers, the dashboards are automatically imported into Grafana. You can access them at `http://localhost:3000/`, using the default credentials (admin/admin).
 
-### Use Azure Developer CLI
+There are two dashboards available:
+ - **User Authentication Flow** - Displays the metrics and traces related to the login and logout processes.
+ 
+![User Authentication Flow](img/user_authentication_flow_dashboard.png)
 
-You can use the [Azure Developer CLI](https://aka.ms/azd) to run this project on Azure with only a few commands. Follow the next instructions:
+ - **ASP.NET Core** - Displays the metrics and traces related to the ASP.NET Core application.
 
-- Install the latest or update to the latest [Azure Developer CLI (azd)](https://aka.ms/azure-dev/install).
-- Log in `azd` (if you haven't done it before) to your Azure account:
-```sh
-azd auth login
-```
-- Initialize `azd` from the root of the repo.
-```sh
-azd init
-```
-- During init:
-  - Select `Use code in the current directory`. Azd will automatically detect the .NET Aspire project.
-  - Confirm `.NET (Aspire)` and continue.
-  - Select which services to expose to the Internet (exposing `webapp` is enough to test the sample).
-  - Finalize the initialization by giving a name to your environment.
+![ASP.NET Core](img/asp_net_dashboard.png)
 
-- Create Azure resources and deploy the sample by running:
-```sh
-azd up
-```
-Notes:
-  - The operation takes a few minutes the first time it is ever run for an environment.
-  - At the end of the process, `azd` will display the `url` for the webapp. Follow that link to test the sample.
-  - You can run `azd up` after saving changes to the sample to re-deploy and update the sample.
-  - Report any issues to [azure-dev](https://github.com/Azure/azure-dev/issues) repo.
-  - [FAQ and troubleshoot](https://learn.microsoft.com/azure/developer/azure-developer-cli/troubleshoot?tabs=Browser) for azd.
-
-## Contributing
-
-For more information on contributing to this repo, read [the contribution documentation](./CONTRIBUTING.md) and [the Code of Conduct](CODE-OF-CONDUCT.md).
-
-### Sample data
-
-The sample catalog data is defined in [catalog.json](https://github.com/dotnet/eShop/blob/main/src/Catalog.API/Setup/catalog.json). Those product names, descriptions, and brand names are fictional and were generated using [GPT-35-Turbo](https://learn.microsoft.com/en-us/azure/ai-services/openai/how-to/chatgpt), and the corresponding [product images](https://github.com/dotnet/eShop/tree/main/src/Catalog.API/Pics) were generated using [DALL·E 3](https://openai.com/dall-e-3).
-
-## eShop on Azure
-
-For a version of this app configured for deployment on Azure, please view [the eShop on Azure](https://github.com/Azure-Samples/eShopOnAzure) repo.
+The first dashboard is the one that contains the observability data tracked in this assignment, while the second one is a general dashboard for the ASP.NET Core application, imported from https://grafana.com/grafana/dashboards/19924-asp-net-core/.
