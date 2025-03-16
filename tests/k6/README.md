@@ -23,7 +23,7 @@ The test script includes two scenarios:
 
 ## Available Test Users
 
-The load test uses 24 test users:
+The load test uses 21 test users:
 
 1. Original users:
    - alice/Pass123$
